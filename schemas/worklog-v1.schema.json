@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mogako.app/schemas/worklog-v1.schema.json",
+  "title": "Mogako Worklog v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "recordId",
+    "generatedAt",
+    "date",
+    "recordMode",
+    "focus",
+    "usage",
+    "contentShared",
+    "consent",
+    "delivery"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "recordId": { "type": "string", "format": "uuid" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "date": { "type": "string", "format": "date" },
+    "recordMode": {
+      "enum": ["METADATA_ONLY", "REVIEWED_SUMMARY"]
+    },
+    "focus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seconds", "sessionCount"],
+      "properties": {
+        "seconds": { "type": "integer", "minimum": 0 },
+        "sessionCount": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["providers"],
+      "properties": {
+        "providers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["provider", "sessionCount"],
+            "properties": {
+              "provider": { "type": "string" },
+              "model": { "type": "string" },
+              "sessionCount": { "type": "integer", "minimum": 0 },
+              "inputTokens": { "type": "integer", "minimum": 0 },
+              "outputTokens": { "type": "integer", "minimum": 0 },
+              "cachedInputTokens": { "type": "integer", "minimum": 0 }
+            }
+          }
+        }
+      }
+    },
+    "contentShared": { "type": "boolean" },
+    "worklog": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "summary", "completed", "nextActions", "blockers"],
+      "properties": {
+        "title": { "type": "string", "maxLength": 120 },
+        "summary": { "type": "string", "maxLength": 1000 },
+        "completed": {
+          "type": "array",
+          "maxItems": 20,
+          "items": { "type": "string", "maxLength": 300 }
+        },
+        "nextActions": {
+          "type": "array",
+          "maxItems": 20,
+          "items": { "type": "string", "maxLength": 300 }
+        },
+        "blockers": {
+          "type": "array",
+          "maxItems": 20,
+          "items": { "type": "string", "maxLength": 300 }
+        }
+      }
+    },
+    "consent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summarySharingEnabled", "reviewedBeforeSubmission"],
+      "properties": {
+        "summarySharingEnabled": { "type": "boolean" },
+        "reviewedBeforeSubmission": { "type": "boolean" }
+      }
+    },
+    "delivery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "automaticUpload"],
+      "properties": {
+        "status": { "const": "LOCAL_OUTBOX_ONLY" },
+        "automaticUpload": { "const": false }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "recordMode": { "const": "REVIEWED_SUMMARY" } }
+      },
+      "then": {
+        "required": ["worklog"],
+        "properties": { "contentShared": { "const": true } }
+      },
+      "else": {
+        "not": { "required": ["worklog"] },
+        "properties": { "contentShared": { "const": false } }
+      }
+    }
+  ]
+}

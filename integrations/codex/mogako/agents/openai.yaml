@@ -1,0 +1,6 @@
+interface:
+  display_name: "Mogako Worklog"
+  short_description: "Save a privacy-first coding worklog"
+  default_prompt: "Use $mogako to close today's coding session."
+policy:
+  allow_implicit_invocation: false

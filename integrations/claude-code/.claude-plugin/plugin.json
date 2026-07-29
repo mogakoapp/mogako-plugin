@@ -1,0 +1,11 @@
+{
+  "name": "mogako",
+  "description": "Create privacy-first Mogako worklogs from Claude Code sessions.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Mogako contributors"
+  },
+  "homepage": "https://github.com/rbxo0128/mogako-plugin",
+  "repository": "https://github.com/rbxo0128/mogako-plugin",
+  "license": "MIT"
+}
