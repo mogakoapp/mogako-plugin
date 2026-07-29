@@ -1,0 +1,41 @@
+{
+  "name": "mogako-plugin",
+  "version": "0.1.0",
+  "description": "Privacy-first worklog bridge for Claude Code, Codex, Antigravity, and Mogako.",
+  "type": "module",
+  "bin": {
+    "mogako": "./src/cli.js"
+  },
+  "files": [
+    "src",
+    "integrations",
+    "schemas",
+    "README.md",
+    "PRIVACY.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test",
+    "check": "node --check src/cli.js && node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "mogako",
+    "codex",
+    "claude-code",
+    "antigravity",
+    "agent-skill",
+    "worklog"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rbxo0128/mogako-plugin.git"
+  },
+  "bugs": {
+    "url": "https://github.com/rbxo0128/mogako-plugin/issues"
+  },
+  "homepage": "https://github.com/rbxo0128/mogako-plugin#readme"
+}
