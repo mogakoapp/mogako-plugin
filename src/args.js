@@ -26,3 +26,30 @@ export function parseArgs(argv) {
 
   return { positional, flags };
 }
+
+export function booleanFlag(flags, name) {
+  const value = flags[name];
+  if (value === undefined || value === false) {
+    return false;
+  }
+  if (value === true) {
+    return true;
+  }
+  const normalized = String(value).trim().toLowerCase();
+  if (["1", "true", "yes", "y", "on"].includes(normalized)) {
+    return true;
+  }
+  if (["0", "false", "no", "n", "off"].includes(normalized)) {
+    return false;
+  }
+  throw new Error(`--${name} must be a boolean flag.`);
+}
+
+export function stringFlag(flags, name) {
+  const value = flags[name];
+  if (value === undefined || value === true) {
+    return undefined;
+  }
+  const normalized = String(value).trim();
+  return normalized || undefined;
+}
