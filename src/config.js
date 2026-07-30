@@ -20,6 +20,26 @@ export function parsePrivacyMode(value) {
   );
 }
 
+export function normalizeApiBaseUrl(value) {
+  let url;
+  try {
+    url = new URL(String(value || "").trim());
+  } catch {
+    throw new Error("apiBaseUrl must be an absolute URL.");
+  }
+
+  const localHost = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+  if (url.protocol !== "https:" && !(localHost && url.protocol === "http:")) {
+    throw new Error("apiBaseUrl must use HTTPS except for localhost development.");
+  }
+  url.hash = "";
+  url.search = "";
+  if (!url.pathname.endsWith("/")) {
+    url.pathname += "/";
+  }
+  return url.toString();
+}
+
 export function validateConfig(config) {
   if (!Object.values(PRIVACY_MODES).includes(config.privacyMode)) {
     throw new Error(`Unsupported privacy mode: ${config.privacyMode}`);
@@ -30,20 +50,21 @@ export function validateConfig(config) {
   if (config.automaticUpload !== false) {
     throw new Error("automaticUpload must remain false in v0.1.");
   }
+  config.apiBaseUrl = normalizeApiBaseUrl(config.apiBaseUrl);
   return config;
 }
 
 export async function loadConfig(env = process.env) {
   const { config: configPath } = getPaths(env);
   if (!(await pathExists(configPath))) {
-    return { ...DEFAULT_CONFIG };
+    return validateConfig({ ...DEFAULT_CONFIG });
   }
   return validateConfig({ ...DEFAULT_CONFIG, ...(await readJson(configPath)) });
 }
 
 export async function saveConfig(config, env = process.env) {
   const { config: configPath } = getPaths(env);
-  const validated = validateConfig(config);
+  const validated = validateConfig({ ...config });
   await writeJson(configPath, validated);
   return validated;
 }
@@ -56,7 +77,8 @@ export async function initializeConfig({ mode, force = false, env = process.env 
 
   const config = {
     ...DEFAULT_CONFIG,
-    privacyMode: mode ? parsePrivacyMode(mode) : DEFAULT_CONFIG.privacyMode
+    privacyMode: mode ? parsePrivacyMode(mode) : DEFAULT_CONFIG.privacyMode,
+    apiBaseUrl: env.MOGAKO_API_BASE_URL || DEFAULT_CONFIG.apiBaseUrl
   };
   await saveConfig(config, env);
   return config;
