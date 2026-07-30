@@ -10,6 +10,7 @@ export function getPaths(env = process.env) {
   return {
     home,
     config: path.join(home, "config.json"),
+    connection: path.join(home, "connection.json"),
     activity: path.join(home, "activity"),
     outbox: path.join(home, "outbox")
   };
