@@ -1,5 +1,6 @@
 import os from "node:os";
 import path from "node:path";
+import { validateCheckpoint } from "./checkpoint-validation.js";
 import { loadConfig, normalizeApiBaseUrl } from "./config.js";
 import {
   loadConnection,
@@ -9,6 +10,11 @@ import {
 import { PRIVACY_MODES, WORKLOG_SCHEMA_VERSION } from "./constants.js";
 import { validateDateString } from "./date.js";
 import { readJson } from "./files.js";
+import {
+  markCheckpointDelivered,
+  markCheckpointFailed,
+  markCheckpointSubmitting
+} from "./outbox.js";
 
 const ROOT_FIELDS = new Set([
   "schemaVersion",
@@ -124,6 +130,62 @@ export async function submitRecord(filePath, {
   };
 }
 
+export async function submitCheckpoint(filePath, {
+  env = process.env,
+  fetch = globalThis.fetch,
+  now = new Date()
+} = {}) {
+  const resolvedPath = path.resolve(requiredString(filePath, "Checkpoint path"));
+  let submitting = false;
+  try {
+    const checkpoint = validateCheckpoint(await readJson(resolvedPath));
+    const connection = await loadConnection(env);
+    await markCheckpointSubmitting(resolvedPath, { now });
+    submitting = true;
+    const response = await requestJson(
+      new URL("worklog-imports/checkpoints", connection.apiBaseUrl),
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Worklog ${connection.token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(checkpoint)
+      },
+      fetch
+    );
+    const result = requiredString(response.result, "checkpoint import result");
+    if (result !== "CREATED" && result !== "UNCHANGED") {
+      throw new MogakoTransportError(
+        "Mogako returned an unsupported checkpoint import result."
+      );
+    }
+    const submission = {
+      result,
+      checkpointId: requiredString(response.checkpointId, "checkpointId"),
+      sourceRecordId: requiredString(response.sourceRecordId, "sourceRecordId"),
+      workDate: requiredString(response.workDate, "workDate"),
+      importedAt: requiredString(response.importedAt, "importedAt")
+    };
+    if (submission.sourceRecordId !== checkpoint.sourceRecordId) {
+      throw new MogakoTransportError(
+        "Mogako returned a different checkpoint sourceRecordId."
+      );
+    }
+    await markCheckpointDelivered(resolvedPath, { now: new Date() });
+    return submission;
+  } catch (error) {
+    const retryable = submitting && isRetryable(error);
+    const errorCode = stableDeliveryErrorCode(error, submitting);
+    await markCheckpointFailed(resolvedPath, {
+      retryable,
+      errorCode,
+      now: new Date()
+    });
+    throw error;
+  }
+}
+
 export function validateWorklog(value) {
   assertObject(value, "record");
   rejectUnknown(value, ROOT_FIELDS, "record");
@@ -224,6 +286,32 @@ async function parseResponseBody(response) {
       status: response.status
     });
   }
+}
+
+function isRetryable(error) {
+  if (!(error instanceof MogakoTransportError)) {
+    return false;
+  }
+  if (error.status === undefined) {
+    return true;
+  }
+  return error.status === 408 || error.status === 429 || error.status >= 500;
+}
+
+function stableDeliveryErrorCode(error, submitting) {
+  if (!submitting) {
+    return "LOCAL_VALIDATION_FAILED";
+  }
+  if (error instanceof MogakoTransportError) {
+    if (typeof error.code === "string" && error.code !== "") {
+      return error.code;
+    }
+    if (Number.isInteger(error.status)) {
+      return `HTTP_${error.status}`;
+    }
+    return "NETWORK_ERROR";
+  }
+  return "LOCAL_SUBMIT_FAILED";
 }
 
 function validateFocus(value) {
