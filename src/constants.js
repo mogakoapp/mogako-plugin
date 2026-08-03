@@ -5,7 +5,7 @@ export const PRIVACY_MODES = Object.freeze({
 
 export const CONFIG_VERSION = 1;
 export const WORKLOG_SCHEMA_VERSION = "1.0";
-export const DEFAULT_API_BASE_URL = "https://api.mogako.app/api/v1/";
+export const DEFAULT_API_BASE_URL = "https://api.mogako.xyz/api/v1/";
 
 export const DEFAULT_CONFIG = Object.freeze({
   schemaVersion: CONFIG_VERSION,
