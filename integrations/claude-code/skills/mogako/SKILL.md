@@ -1,15 +1,26 @@
 ---
 name: mogako
-description: Close or inspect a Mogako coding session. Use only when the user explicitly asks to run Mogako, save today's coding activity, create a worklog, or check Mogako privacy settings.
+description: Create or inspect a Mogako work checkpoint. Use only when the user explicitly asks to run Mogako, save the current coding progress, or check Mogako privacy settings.
 disable-model-invocation: true
 ---
 
 # Mogako
 
-1. Run `mogako status --json`. If unavailable, ask the user to install or link `mogako-plugin`; do not invent activity or token usage.
-2. When `privacyMode` is `METADATA_ONLY`, do not inspect, quote, or summarize source code, prompts, terminal output, file names, repository names, or paths. Run `mogako wrap` and report the local outbox path.
-3. When `privacyMode` is `REVIEWED_SUMMARY`, prepare only this allowlisted JSON from work already described in the current session: `title`, `summary`, `completed`, `nextActions`, `blockers`.
-4. Never include raw prompts, source code, diffs, environment variables, credentials, personal data, absolute paths, remote URLs, or customer data.
-5. Show the exact summary JSON and ask the user to approve it. Do not write or wrap it before approval.
-6. After approval, save the JSON to a temporary file, run `mogako wrap --summary-file <file> --reviewed`, then delete the temporary file.
-7. Mogako v0.1 writes to a local outbox only. Never claim it was uploaded to the Mogako service.
+1. Run `mogako status --json`. If unavailable, ask the user to install or link `mogako-plugin`; do not invent activity, model, or token usage.
+2. For a reviewed checkpoint, prepare only this exact JSON shape from outcomes already stated in the current interaction:
+
+```json
+{
+  "summary": "concise reviewed result",
+  "completed": [],
+  "nextActions": [],
+  "blockers": []
+}
+```
+
+3. Do not include title, raw prompts, source code, diffs, environment variables, credentials, personal data, absolute paths, remote URLs, customer data, provider, model, or token usage.
+4. Show the summary input to the user. After the user approves preparing it, write it to a temporary JSON file.
+5. Run `mogako checkpoint --summary-file <file> --repo <repository-root> --target claude-code --submit`.
+6. The common CLI collects changed file names, excludes sensitive paths, creates an immutable outbox payload, displays the exact wire JSON and destination, and asks for final submission approval. Do not bypass that approval or call the backend directly.
+7. Delete the temporary summary file after the command finishes. Report the payload path and the actual submission result. If the user declines final submission, report that the local immutable payload remains pending.
+8. Never add automatic, startup, periodic, or session-end submission behavior.
