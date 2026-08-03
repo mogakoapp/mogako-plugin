@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 import path from "node:path";
 import { getPaths } from "./paths.js";
 import {
@@ -26,7 +27,12 @@ export async function writeCheckpointOutbox(
   const payloadPath = path.join(outbox, `${payload.sourceRecordId}.json`);
   const deliveryPath = deliveryPathFor(payloadPath);
   await writeJsonExclusive(payloadPath, payload);
-  await writeJsonAtomic(deliveryPath, initialDelivery(now));
+  try {
+    await writeJsonAtomic(deliveryPath, initialDelivery(now));
+  } catch (error) {
+    await fs.rm(payloadPath, { force: true });
+    throw error;
+  }
   return { payloadPath, deliveryPath };
 }
 
