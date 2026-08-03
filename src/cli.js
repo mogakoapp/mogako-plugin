@@ -4,6 +4,8 @@ import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import { recordActivity, loadActivities, aggregateActivities } from "./activity.js";
 import { booleanFlag, parseArgs, stringFlag } from "./args.js";
+import { buildCheckpoint } from "./checkpoint.js";
+import { collectChangedFiles } from "./changed-files.js";
 import {
   initializeConfig,
   loadConfig,
@@ -11,9 +13,11 @@ import {
 } from "./config.js";
 import { disconnect } from "./connection.js";
 import { localDateString, validateDateString } from "./date.js";
+import { readJson } from "./files.js";
 import { installTarget, listInstallTargets } from "./install.js";
+import { writeCheckpointOutbox } from "./outbox.js";
 import { getPaths } from "./paths.js";
-import { connect, submitRecord } from "./transport.js";
+import { connect, submitCheckpoint, submitRecord } from "./transport.js";
 import { buildWorklog, writeWorklog } from "./worklog.js";
 
 const HELP = `Mogako CLI v0.1
@@ -29,6 +33,9 @@ Usage:
   mogako status [--date YYYY-MM-DD] [--json]
   mogako wrap [--date YYYY-MM-DD] [--summary-file <path> --reviewed]
               [--dry-run] [--submit] [--yes]
+  mogako checkpoint --summary-file <path> --repo <root>
+                    [--target codex|claude-code|antigravity|antigravity-cli|manual]
+                    [--submit] [--yes]
   mogako submit <record.json>
   mogako install --target ${listInstallTargets().join("|")} [--force]
 
@@ -232,13 +239,93 @@ export async function runCli(
       return;
     }
 
+    case "checkpoint": {
+      const summaryFile = stringFlag(flags, "summary-file");
+      const repositoryRoot = stringFlag(flags, "repo");
+      if (!summaryFile) {
+        throw new Error("checkpoint requires --summary-file.");
+      }
+      if (!repositoryRoot) {
+        throw new Error("checkpoint requires --repo.");
+      }
+      const changedFilesResult = await collectChangedFiles(
+        path.resolve(repositoryRoot)
+      );
+      const checkpoint = await buildCheckpoint({
+        summaryFile,
+        repositoryRoot,
+        target: stringFlag(flags, "target"),
+        reviewed: true,
+        changedFilesResult
+      });
+      const { payloadPath, deliveryPath } = await writeCheckpointOutbox(
+        checkpoint,
+        { env }
+      );
+      const config = await loadConfig(env);
+      const destination = new URL(
+        "worklog-imports/checkpoints",
+        config.apiBaseUrl
+      ).toString();
+      output(
+        {
+          payloadPath,
+          deliveryPath,
+          sourceClient: checkpoint.sourceClient,
+          excludedPathCount: changedFilesResult.excludedCount,
+          destination,
+          checkpoint
+        },
+        true,
+        io
+      );
+
+      if (!booleanFlag(flags, "submit")) {
+        return;
+      }
+      let approved = booleanFlag(flags, "yes");
+      if (!approved) {
+        if (!io.isInteractive) {
+          throw new Error(
+            "checkpoint --submit requires interactive confirmation or explicit --yes. The immutable payload was preserved."
+          );
+        }
+        approved = await io.confirm(
+          `Submit this exact ${checkpoint.sourceClient} checkpoint to Mogako? [y/N] `
+        );
+      }
+      if (!approved) {
+        output(
+          "Submission cancelled. The immutable payload and sidecar were preserved.",
+          false,
+          io
+        );
+        return;
+      }
+      const submission = await submitCheckpoint(payloadPath, { env, fetch });
+      output(
+        { payloadPath, deliveryPath, submission },
+        booleanFlag(flags, "json"),
+        io
+      );
+      return;
+    }
+
     case "submit": {
       const filePath = positional[1] || stringFlag(flags, "file");
       if (!filePath) {
         throw new Error("submit requires a local worklog JSON path.");
       }
-      const submission = await submitRecord(filePath, { env, fetch });
-      output({ filePath: path.resolve(filePath), submission }, booleanFlag(flags, "json"), io);
+      const resolvedPath = path.resolve(filePath);
+      const record = await readJson(resolvedPath);
+      const submission = record.schemaVersion === 2
+        ? await submitCheckpoint(resolvedPath, { env, fetch })
+        : await submitRecord(resolvedPath, { env, fetch });
+      output(
+        { filePath: resolvedPath, submission },
+        booleanFlag(flags, "json"),
+        io
+      );
       return;
     }
 
