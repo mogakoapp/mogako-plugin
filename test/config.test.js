@@ -17,6 +17,7 @@ test("initialization defaults to metadata-only and no upload", async () => {
   assert.equal(config.privacyMode, PRIVACY_MODES.METADATA_ONLY);
   assert.equal(config.summaryReviewRequired, true);
   assert.equal(config.automaticUpload, false);
+  assert.equal(config.apiBaseUrl, "https://api.mogako.xyz/api/v1/");
   assert.deepEqual(await loadConfig(env), config);
 });
 
