@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 2,
+  "sourceRecordId": "4bfcbb06-c71c-4cba-ae56-4d51cccbad33",
+  "sourceClient": "CODEX",
+  "generatedAt": "2026-08-03T06:20:00.000Z",
+  "timeZoneId": "Asia/Seoul",
+  "localDate": "2026-08-03",
+  "summary": "Reviewed checkpoint fixture.",
+  "completed": ["Reviewed current work"],
+  "changedFiles": ["docs/worklog-checkpoint-v2.md"],
+  "nextActions": ["Continue implementation"],
+  "blockers": []
+}

@@ -9,12 +9,16 @@ const SECRET_PATTERNS = [
   [/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/giu, "[REDACTED_EMAIL]"]
 ];
 
-export function sanitizeText(value, maxLength = 1000) {
-  let sanitized = String(value ?? "").trim().slice(0, maxLength);
+export function redactText(value) {
+  let redacted = String(value ?? "");
   for (const [pattern, replacement] of SECRET_PATTERNS) {
-    sanitized = sanitized.replace(pattern, replacement);
+    redacted = redacted.replace(pattern, replacement);
   }
-  return sanitized;
+  return redacted;
+}
+
+export function sanitizeText(value, maxLength = 1000) {
+  return redactText(value).trim().slice(0, maxLength);
 }
 
 function sanitizeList(value, fieldName, maxItems = 20) {
@@ -58,4 +62,51 @@ export function sanitizeSummary(input) {
     nextActions: sanitizeList(input.nextActions, "nextActions"),
     blockers: sanitizeList(input.blockers, "blockers")
   };
+}
+
+const CHECKPOINT_SUMMARY_FIELDS = Object.freeze([
+  "summary",
+  "completed",
+  "nextActions",
+  "blockers"
+]);
+
+export function sanitizeCheckpointSummary(input) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new Error("Checkpoint summary-file must be a JSON object.");
+  }
+  const unknown = Object.keys(input).filter(
+    (key) => !CHECKPOINT_SUMMARY_FIELDS.includes(key)
+  );
+  if (unknown.length > 0) {
+    throw new Error(`Checkpoint summary-file contains unsupported field '${unknown[0]}'.`);
+  }
+  for (const field of CHECKPOINT_SUMMARY_FIELDS) {
+    if (!(field in input)) {
+      throw new Error(`Checkpoint summary-file.${field} is required.`);
+    }
+  }
+  if (typeof input.summary !== "string") {
+    throw new Error("Checkpoint summary-file.summary must be a string.");
+  }
+  return {
+    summary: redactText(input.summary).trim(),
+    completed: sanitizeCheckpointList(input.completed, "completed"),
+    nextActions: sanitizeCheckpointList(input.nextActions, "nextActions"),
+    blockers: sanitizeCheckpointList(input.blockers, "blockers")
+  };
+}
+
+function sanitizeCheckpointList(value, fieldName) {
+  if (!Array.isArray(value)) {
+    throw new Error(`Checkpoint summary-file.${fieldName} must be an array.`);
+  }
+  return value.map((item, index) => {
+    if (typeof item !== "string") {
+      throw new Error(
+        `Checkpoint summary-file.${fieldName}[${index}] must be a string.`
+      );
+    }
+    return redactText(item).trim();
+  });
 }
