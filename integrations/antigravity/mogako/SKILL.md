@@ -1,14 +1,25 @@
 ---
 name: mogako
-description: Close or inspect a Mogako coding session. Use only when the user explicitly asks to run Mogako, save today's coding activity, create a worklog, or check Mogako privacy settings.
+description: Create or inspect a Mogako work checkpoint. Use only when the user explicitly asks to run Mogako, save the current coding progress, or check Mogako privacy settings.
 ---
 
 # Mogako
 
-1. Run `mogako status --json`. If the command is unavailable, ask the user to install or link `mogako-plugin`; never fabricate activity or token data.
-2. In `METADATA_ONLY`, do not inspect or summarize code, prompts, terminal output, file names, repository names, or paths. Run `mogako wrap` and show the local outbox path.
-3. In `REVIEWED_SUMMARY`, generate only `title`, `summary`, `completed`, `nextActions`, and `blockers` from the current session's already stated outcomes.
-4. Never include raw prompts, code, diffs, secrets, personal data, absolute paths, repository URLs, or customer data.
-5. Display the exact JSON and require explicit approval before writing it.
-6. After approval, write a temporary JSON file, run `mogako wrap --summary-file <file> --reviewed`, then remove the temporary file.
-7. Version 0.1 is local-only. Do not say the worklog was uploaded.
+1. Run `mogako status --json`. If unavailable, ask the user to install or link `mogako-plugin`; do not invent activity, model, or token usage.
+2. For a reviewed checkpoint, prepare only this exact JSON shape from outcomes already stated in the current interaction:
+
+```json
+{
+  "summary": "concise reviewed result",
+  "completed": [],
+  "nextActions": [],
+  "blockers": []
+}
+```
+
+3. Do not include title, raw prompts, source code, diffs, environment variables, credentials, personal data, absolute paths, remote URLs, customer data, provider, model, or token usage.
+4. Show the summary input to the user. After the user approves preparing it, write it to a temporary JSON file.
+5. Run `mogako checkpoint --summary-file <file> --repo <repository-root> --target antigravity --submit`.
+6. The common CLI collects changed file names, excludes sensitive paths, creates an immutable outbox payload, displays the exact wire JSON and destination, and asks for final submission approval. Do not bypass that approval or call the backend directly.
+7. Delete the temporary summary file after the command finishes. Report the payload path and the actual submission result. If the user declines final submission, report that the local immutable payload remains pending.
+8. Never add automatic, startup, periodic, or session-end submission behavior.

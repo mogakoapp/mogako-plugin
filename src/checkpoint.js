@@ -12,7 +12,8 @@ export async function buildCheckpoint({
   repositoryRoot,
   target,
   reviewed = false,
-  now = new Date()
+  now = new Date(),
+  changedFilesResult
 } = {}) {
   if (!reviewed) {
     throw new Error("Checkpoint creation requires the --reviewed flag.");
@@ -30,7 +31,11 @@ export async function buildCheckpoint({
   const summaryInput = sanitizeCheckpointSummary(
     await readJson(path.resolve(summaryFile))
   );
-  const files = await collectChangedFiles(path.resolve(repositoryRoot));
+  const files = changedFilesResult ||
+    await collectChangedFiles(path.resolve(repositoryRoot));
+  if (!files || !Array.isArray(files.included)) {
+    throw new Error("changedFilesResult is invalid.");
+  }
   const timeZoneId = resolvedTimeZone();
 
   return validateCheckpoint({
