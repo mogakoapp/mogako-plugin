@@ -28,12 +28,13 @@ codex             -> CODEX
 claude-code       -> CLAUDE_CODE
 antigravity       -> ANTIGRAVITY
 antigravity-cli   -> ANTIGRAVITY
-manual shell      -> MANUAL_CLI
+manual            -> MANUAL_CLI
+target omitted    -> MANUAL_CLI
 ```
 
 `sourceClient`는 앱에서 checkpoint 출처를 표시하기 위한 값이다. 인증, 권한, 과금 또는 신뢰도 판단에 사용하지 않는다.
 
-## 3. 공통 구조
+## 3. 공통 wire payload
 
 ```json
 {
@@ -51,75 +52,79 @@ manual shell      -> MANUAL_CLI
 }
 ```
 
-최상위 필드는 exact allowlist다. 알 수 없는 필드는 plugin validator와 backend validation에서 모두 거절한다.
+최상위 필드는 exact allowlist다. `additionalProperties`는 허용하지 않으며 알 수 없는 필드는 plugin validator와 backend validation에서 모두 거절한다.
 
-## 4. 필드 계약
+| Field | Required contract |
+| --- | --- |
+| schemaVersion | integer `2` |
+| sourceRecordId | UUID |
+| sourceClient | `CODEX`, `CLAUDE_CODE`, `ANTIGRAVITY`, `MANUAL_CLI` |
+| generatedAt | UTC RFC 3339 instant, 서버보다 최대 5분 미래만 허용 |
+| timeZoneId | valid IANA zone, 1~64자 |
+| localDate | `generatedAt`과 `timeZoneId`로 계산한 날짜 |
+| summary | trim 후 공백이 아닌 문자열, 1~1000자 |
+| completed | 필수 배열, 최대 20개, 항목당 1~300자 |
+| changedFiles | 필수 배열, 최대 100개, 저장소 상대 경로, 항목당 1~240자 |
+| nextActions | 필수 배열, 최대 20개, 항목당 1~300자 |
+| blockers | 필수 배열, 최대 20개, 항목당 1~300자, 빈 배열 허용 |
 
-### `schemaVersion`
+CLI와 서버는 길이 초과 값을 조용히 자르지 않고, trim되지 않은 wire 값을 수정해 저장하지 않는다. 정규화되지 않은 값은 preview 이전 또는 API validation에서 거절한다.
 
-- integer
-- 정확히 `2`
+## 4. v2 summary-file 입력 계약
+
+`mogako checkpoint --summary-file <json>`은 다음 네 필드만 받는다.
+
+```json
+{
+  "summary": "필수 작업 요약",
+  "completed": [],
+  "nextActions": [],
+  "blockers": []
+}
+```
+
+규칙:
+
+- 네 필드는 모두 필수다.
+- `title`과 unknown field는 거절한다.
+- `summary`는 문자열이고 나머지 세 필드는 문자열 배열이다.
+- 기존 secret redaction은 유지한다.
+- redaction 후 trim과 v2 길이 제한을 검사한다.
+- v1 sanitizer의 truncation 동작은 v2에 적용하지 않는다.
+- 최종 redaction·validation 결과가 preview와 immutable wire payload에 동일하게 사용된다.
+
+## 5. 필드 의미
 
 ### `sourceRecordId`
 
-- UUID
 - outbox 생성 시 한 번만 만든다.
 - 네트워크 실패, 401 해결 후 재시도, 응답 손실 시에도 변경하지 않는다.
 - backend idempotency key의 일부다.
 
 ### `sourceClient`
 
-- 위 네 enum 중 하나
 - integration이 공통 CLI에 target을 전달하면 CLI가 결정한다.
+- `--target manual`과 target 생략은 모두 `MANUAL_CLI`다.
 - integration이 payload JSON을 직접 작성하지 않는다.
 
-### `generatedAt`
+### `generatedAt`, `timeZoneId`, `localDate`
 
-- UTC ISO-8601 instant
-- checkpoint 내용을 사용자가 검토한 뒤 outbox를 생성한 시각
-- backend는 과거 전송 지연을 허용하되 과도한 미래 시각은 거절한다.
+- `generatedAt`은 사용자가 검토한 뒤 outbox를 생성한 UTC 시각이다.
+- `timeZoneId`는 OS에서 얻은 IANA timezone ID다.
+- `localDate`는 해당 instant를 `timeZoneId`로 변환한 `YYYY-MM-DD`다.
+- 신뢰할 수 있는 IANA zone을 얻지 못하면 임의 추정하지 않고 생성을 중단한다.
 
-### `timeZoneId`
+### 작업 내용 필드
 
-- IANA timezone ID
-- 예: `Asia/Seoul`
-- OS에서 신뢰할 수 있는 IANA zone을 얻지 못하면 임의 추정하지 않고 checkpoint 생성을 중단한다.
+- `summary`: 사용자가 검토한 현재 작업 결과의 간결한 요약
+- `completed`: 완료한 항목
+- `changedFiles`: 저장소 기준 상대 경로
+- `nextActions`: 다음에 진행할 항목
+- `blockers`: 막힌 항목, 없으면 `[]`
 
-### `localDate`
+전체 대화 요약, 세션 전문, 코드 본문 또는 diff를 포함하지 않는다.
 
-- `YYYY-MM-DD`
-- `generatedAt`을 `timeZoneId`로 변환한 날짜와 일치해야 한다.
-
-### `summary`
-
-- 사용자가 검토한 현재 작업 결과의 간결한 요약
-- 공백 불가
-- 전체 대화 요약이나 세션 전문을 포함하지 않는다.
-
-### `completed`
-
-- 완료한 항목 목록
-- 문자열 배열
-- 작업 결과만 포함한다.
-
-### `changedFiles`
-
-- Git 저장소 기준 상대 경로 목록
-- 문자열 배열
-- `/` 구분자로 정규화한다.
-- 파일 내용이나 diff를 포함하지 않는다.
-
-### `nextActions`
-
-- 다음에 진행할 항목 목록
-- 문자열 배열
-
-### `blockers`
-
-- 선택적인 막힌 항목 목록
-- 값이 없으면 빈 배열을 사용한다.
-
-## 5. 전송하지 않는 정보
+## 6. 전송하지 않는 정보
 
 schema v2는 다음 정보를 포함하지 않는다.
 
@@ -137,14 +142,14 @@ schema v2는 다음 정보를 포함하지 않는다.
 
 기존 schema v1의 metadata와 usage 정보는 조회 호환을 위해 유지할 수 있지만, v2 checkpoint builder가 이를 복사하지 않는다.
 
-## 6. 변경 파일 수집
+## 7. 변경 파일 수집
 
 공통 CLI만 변경 파일을 수집한다.
 
 허용된 Git 명령:
 
 ```text
-git status --porcelain=v1 -z
+git status --porcelain=v1 -z --untracked-files=all
 ```
 
 금지:
@@ -165,17 +170,18 @@ remote URL 조회
 - 경로당 최대 240자
 - 최대 100개
 - `.env*`, `*.pem`, `*.key`, `credentials*`, `.ssh/`, `secrets/` 등 민감 패턴 제외
+- rename/copy는 NUL 필드 두 개를 모두 소비하고 destination만 후보로 사용
 
-민감 경로는 payload에서 제외한다. 미리보기에서는 제외된 항목 수와 이유를 알려주되 필요 이상으로 민감 경로를 다시 출력하지 않는다.
+민감 경로는 payload에서 제외한다. 미리보기에서는 제외된 항목 수를 알려주되 민감 경로 원문을 필요 이상으로 다시 출력하지 않는다. 서버에 민감하거나 잘못된 경로가 도달하면 전체 요청을 거절한다.
 
-## 7. Integration 책임
+## 8. Integration 책임
 
 Claude Code, Codex, Antigravity integration은 다음만 담당한다.
 
-- 현재 작업 결과를 허용 필드 형태로 준비
+- 현재 작업 결과를 summary-file allowlist 형태로 준비
 - 공통 CLI 호출
 - 자신의 target identifier 전달
-- CLI가 만든 정확한 JSON 미리보기를 사용자에게 보여주는 흐름 연결
+- CLI가 만든 정확한 JSON 미리보기와 승인 흐름 연결
 
 integration은 다음을 담당하지 않는다.
 
@@ -188,16 +194,16 @@ integration은 다음을 담당하지 않는다.
 
 일반 shell은 integration 없이 동일한 공통 CLI를 사용하고 `MANUAL_CLI`로 기록한다.
 
-## 8. 승인과 outbox
+## 9. 승인, immutable outbox, delivery sidecar
 
 checkpoint 생성과 submit은 분리한다.
 
 ```text
 현재 작업 결과 구성
         ↓
-공통 CLI validation
+공통 CLI redaction과 validation
         ↓
-PENDING outbox 생성
+immutable payload와 PENDING sidecar 생성
         ↓
 정확한 JSON 미리보기
         ↓
@@ -206,7 +212,25 @@ PENDING outbox 생성
 submit
 ```
 
-outbox 상태:
+파일:
+
+```text
+~/.mogako/outbox/<sourceRecordId>.json
+~/.mogako/outbox/<sourceRecordId>.delivery.json
+```
+
+첫 파일은 wire payload만 가지며 생성 후 수정하지 않는다. delivery 상태는 sidecar에만 저장한다.
+
+```json
+{
+  "status": "PENDING",
+  "attemptCount": 0,
+  "lastErrorCode": null,
+  "updatedAt": "2026-08-03T06:20:00Z"
+}
+```
+
+허용 상태:
 
 ```text
 PENDING
@@ -220,15 +244,16 @@ FAILED_FINAL
 
 - 승인 전 네트워크 요청 금지
 - 자동 전송, 주기적 전송, 세션 종료 hook 전송 금지
-- 전송 실패 시 outbox 삭제 금지
-- 재시도 시 같은 `sourceRecordId` 유지
+- 전송 실패 시 payload 삭제 금지
+- 재시도 시 같은 payload bytes와 `sourceRecordId` 유지
+- sidecar에 payload, device token 또는 API error body 저장 금지
 - backend `UNCHANGED` 응답은 성공으로 처리
 
-## 9. Backend endpoint
+## 10. Backend endpoint
 
 ```text
 POST /api/v1/worklog-imports/checkpoints
-Authorization: Mogako-Worklog <device-token>
+Authorization: Worklog <device-token>
 ```
 
 성공 결과:
@@ -240,25 +265,30 @@ UNCHANGED
 
 schema v2에서는 기존 일별 replace 결과인 `REPLACED`와 `WORKLOG_STALE_IMPORT`를 사용하지 않는다.
 
-## 10. Legacy 호환
+## 11. Legacy 호환
 
 - schema v1 `record`, `wrap`, metadata-only 파일은 즉시 삭제하지 않는다.
 - v1과 v2는 endpoint와 payload를 명시적으로 구분한다.
 - v1 파일에서 source client를 provider/model 값으로 추정하지 않는다.
 - backend legacy checkpoint는 `sourceClient=null`로 유지한다.
+- `LEGACY_METADATA`는 checkpoint count와 timeline에 포함하되 대표 summary와 summary/list UI 후보에서는 제외한다.
 - v1 종료는 backend checkpoint-only 전환과 사용 현황 검증 후 별도 공지한다.
 
-## 11. Contract verification
+## 12. Contract verification
 
-plugin test fixture와 backend OpenAPI 예시는 다음이 일치해야 한다.
+plugin JSON Schema, fixture와 backend OpenAPI·fixture는 다음이 정확히 일치해야 한다.
 
-- 필드 이름
-- 필수/선택 여부
-- source client enum
-- 문자열과 배열 제한
-- timezone/date 검증 의미
-- 경로 검증 의미
-- unknown field 거절
+```text
+11 required fields
+4 sourceClient enum values
+summary 1000
+completed/nextActions/blockers 20 x 300
+changedFiles 100 x 240
+timeZoneId 64
+future skew 5 minutes
+additionalProperties false
+Authorization: Worklog <device-token>
+```
 
 필수 fixture:
 
@@ -272,9 +302,9 @@ invalid-sensitive-path.json
 invalid-local-date.json
 ```
 
-세 integration의 valid fixture는 `sourceClient`를 제외하고 동일한 구조를 사용해야 한다.
+네 valid fixture는 `sourceRecordId`와 `sourceClient`를 제외하고 동일한 구조와 제한 예시를 사용한다.
 
-## 12. 변경 절차
+## 13. 변경 절차
 
 공통 계약 변경이 필요하면 다음 순서를 따른다.
 
@@ -282,6 +312,6 @@ invalid-local-date.json
 2. 이 문서와 JSON Schema 수정
 3. backend DTO/OpenAPI contract test 수정
 4. plugin fixture와 validator test 수정
-5. 두 저장소 PR에서 동일한 enum과 예시 확인
+5. 두 저장소 PR에서 동일한 enum, 필드, 제한, 인증 헤더 확인
 
 한 저장소에서만 필드나 enum을 먼저 변경하지 않는다.
