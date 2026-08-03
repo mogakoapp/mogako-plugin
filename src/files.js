@@ -27,6 +27,33 @@ export async function writeJson(filePath, value) {
   });
 }
 
+export async function writeJsonExclusive(filePath, value) {
+  await ensureDir(path.dirname(filePath));
+  await fs.writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, {
+    encoding: "utf8",
+    mode: 0o600,
+    flag: "wx"
+  });
+}
+
+export async function writeJsonAtomic(filePath, value) {
+  await ensureDir(path.dirname(filePath));
+  const temporaryPath = path.join(
+    path.dirname(filePath),
+    `.${path.basename(filePath)}.${process.pid}.${Date.now()}.tmp`
+  );
+  try {
+    await fs.writeFile(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, {
+      encoding: "utf8",
+      mode: 0o600,
+      flag: "wx"
+    });
+    await fs.rename(temporaryPath, filePath);
+  } finally {
+    await fs.rm(temporaryPath, { force: true });
+  }
+}
+
 export async function appendJsonLine(filePath, value) {
   await ensureDir(path.dirname(filePath));
   await fs.appendFile(filePath, `${JSON.stringify(value)}\n`, {
