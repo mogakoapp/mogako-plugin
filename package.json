@@ -11,6 +11,8 @@
     "integrations",
     "schemas",
     "README.md",
+    "README.en.md",
+    "README.ja.md",
     "PRIVACY.md",
     "LICENSE"
   ],
@@ -32,10 +34,10 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/rbxo0128/mogako-plugin.git"
+    "url": "git+https://github.com/mogakoapp/mogako-plugin.git"
   },
   "bugs": {
-    "url": "https://github.com/rbxo0128/mogako-plugin/issues"
+    "url": "https://github.com/mogakoapp/mogako-plugin/issues"
   },
-  "homepage": "https://github.com/rbxo0128/mogako-plugin#readme"
+  "homepage": "https://github.com/mogakoapp/mogako-plugin#readme"
 }
