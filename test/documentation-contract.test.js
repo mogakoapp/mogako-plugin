@@ -37,3 +37,41 @@ test("translated READMEs are shipped with the package", async () => {
     assert.ok(packageJson.files.includes(name));
   }
 });
+
+test("public docs expose only the supported contract documents", async () => {
+  const docsDir = path.join(root, "docs");
+  const entries = await fs.readdir(docsDir, { withFileTypes: true });
+  assert.deepEqual(
+    entries.map((entry) => entry.name).sort(),
+    ["provider-support.md", "worklog-checkpoint-v2.md"]
+  );
+
+  await assert.rejects(fs.access(path.join(docsDir, "architecture.md")));
+  await assert.rejects(fs.access(path.join(docsDir, "superpowers")));
+
+  const checkpointContract = await read("docs/worklog-checkpoint-v2.md");
+  for (const fragment of [
+    "summary",
+    "completed",
+    "nextActions",
+    "blockers",
+    "preview",
+    "approval",
+    "outbox",
+    "schemas/worklog-v2.schema.json"
+  ]) {
+    assert.ok(checkpointContract.includes(fragment), `missing public contract fragment: ${fragment}`);
+  }
+
+  for (const fragment of [
+    "/api/v1/worklog-imports/",
+    "Authorization: Worklog",
+    "OpenAPI",
+    "LEGACY_METADATA",
+    "Contract Change Rule",
+    "superpowers",
+    "rbxo0128/mogako"
+  ]) {
+    assert.ok(!checkpointContract.includes(fragment), `found internal fragment: ${fragment}`);
+  }
+});
