@@ -1,16 +1,26 @@
 # Provider support
 
-| Provider | Invocation | Installation target | v0.1 notes |
+All supported hosts use the same `mogako checkpoint` CLI contract. The host skill prepares a four-field summary, shows it to the user, and invokes the common CLI only after approval. No integration installs automatic hooks, calls the Mogako API directly, or submits without the common preview and approval boundary.
+
+| Provider | Invocation | Installation target | Destination |
 |---|---|---|---|
-| Claude Code | `/mogako` as a standalone skill | `~/.claude/skills/mogako` | The repository also contains a Claude plugin manifest for local `--plugin-dir` testing. Marketplace installation would namespace the skill. |
-| Codex CLI / IDE | `$mogako` or `/skills` | `~/.agents/skills/mogako` | Implicit invocation is disabled through `agents/openai.yaml`. |
-| Antigravity | Skill selection or matching prompt | `~/.gemini/config/skills/mogako` | Global skill location. |
-| Antigravity CLI | `/skills`, then invoke Mogako | `~/.gemini/antigravity-cli/skills/mogako` | Kept separate because CLI discovery paths can differ. |
+| Claude Code | `/mogako` | `claude-code` | `~/.claude/skills/mogako` |
+| Codex CLI / IDE | `$mogako` or skill selection | `codex` | `~/.agents/skills/mogako` |
+| Antigravity IDE | skill selection | `antigravity` | `~/.gemini/config/skills/mogako` |
+| Antigravity CLI | skill selection | `antigravity-cli` | `~/.gemini/antigravity-cli/skills/mogako` |
 
-## Token counters
+Every host ultimately runs the corresponding command:
 
-Token usage is recorded only when the host exposes a reliable number or the user provides one explicitly. The CLI never estimates token counts from text size.
+```bash
+mogako checkpoint --summary-file <file> --repo <repository-root> --target <target> --submit
+```
 
-## Summary cost
+The CLI collects only the v2 summary fields (`summary`, `completed`, `nextActions`, `blockers`) and safe repository-relative changed-file paths. It prints the exact payload before network delivery, requires final approval, and keeps the payload in the local outbox when submission is cancelled or retryable delivery fails.
 
-`METADATA_ONLY` does not request a summary. Invoking an agent skill can still consume the host agent's normal turn/context usage. For a no-summary local record without an agent turn, run `mogako wrap` directly in a terminal.
+## Legacy token counters
+
+Token counters belong to the Worklog v1 `record`/`wrap` compatibility path. Checkpoint v2 does not accept provider, model, or token fields and does not estimate token usage from text size.
+
+## Host usage cost
+
+The plugin does not create automatic background tasks. Invoking an Agent Skill can still consume the host agent's normal turn and context budget. For a local v1 record without an agent turn, use the legacy `mogako wrap` command directly in a terminal.
