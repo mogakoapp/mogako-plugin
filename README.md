@@ -1,257 +1,294 @@
-# Mogako Plugin
+[한국어](./README.md) · [English](./README.en.md) · [日本語](./README.ja.md)
 
-Claude Code, Codex, Antigravity와 일반 터미널에서 사용자가 검토한 작업 요약을 모각코 작업 기록으로 보내는 공통 Node.js CLI/Agent Skill 프로젝트입니다.
+# Mogako Plugin (모각코 플러그인)
 
-## 핵심 원칙
+> **Claude Code, Codex, Antigravity와 터미널에서 개인정보를 최소화해 개발 체크포인트를 기록하는 CLI 및 Agent Skill**
 
-- 자동 업로드는 항상 꺼져 있습니다.
-- v2 checkpoint는 전송 전에 정확한 JSON preview를 보여 주고 명시적인 최종 승인을 요구합니다.
-- 원본 프롬프트, 답변, 소스코드, diff, Git remote, 저장소 주소는 수집하거나 전송하지 않습니다.
-- 변경 파일은 `git status`에서 얻은 저장소 상대 경로만 포함합니다. 파일 내용은 읽지 않으며 민감 경로와 비정상 경로는 제외합니다.
-- 요약 입력은 사용자가 준비한 `summary`, `completed`, `nextActions`, `blockers`만 허용합니다.
-- API key, JWT, 로컬 절대 경로, 이메일 등은 preview 전에 마스킹합니다.
-- payload는 immutable outbox 파일로 저장하고 전송 상태는 별도 sidecar 파일에 기록합니다.
-- 연결 토큰은 작업 기록 쓰기 전용이며 CLI 출력에 노출하지 않습니다.
-- 기존 schema v1 `record`/`wrap` 흐름은 호환 목적으로 유지합니다.
+Mogako Plugin은 AI 코딩 도구가 만든 작업 요약과 Git 변경 파일 경로를 검토 가능한 로컬 체크포인트로 만든 뒤, 사용자가 승인한 경우에만 Mogako에 전송합니다. 플러그인은 앱과 분리된 공개 저장소이며, 앱 저장소나 백엔드 코드를 포함하지 않습니다.
 
-## 요구 사항
+공개 저장소: <https://github.com/mogakoapp/mogako-plugin>
+
+---
+
+## 🔒 핵심 가치 및 개인정보 보장 (Privacy Guarantees)
+
+Mogako Plugin은 수집 범위를 줄이고, 전송 전에 사용자가 확인할 수 있도록 설계되었습니다. 구현된 경계를 이해한 뒤 사용하세요.
+
+| 구분 | 수집 항목 | 절대 수집하지 않는 항목 |
+| :--- | :--- | :--- |
+| **체크포인트 v2** | `summary`, `completed`, `nextActions`, `blockers`, 검증된 Git 상대 경로 | **소스코드, 프롬프트, AI 응답 전문, Diff, 절대 경로, Git Remote URL, 파일 본문, 터미널 출력, 토큰** |
+| **구형 Worklog v1** | `record`/`wrap`이 만드는 기존 메타데이터와 검토된 worklog | v2 체크포인트와 필드·승인 흐름이 다르므로 호환용으로만 사용 |
+| **변경 파일 경로 (`changedFiles`)** | Git 상대 경로만 수집 (최대 100개, 경로당 240자 이내) | `.env*`, `*.pem`, `*.key`, `credentials*`, `.ssh/`, `secrets/` 등 민감 파일 자동 제외 |
+
+* **v2 요약 필드 고정**: `title`을 포함한 알 수 없는 필드는 거부됩니다. v2는 정확히 `summary`, `completed`, `nextActions`, `blockers`를 요구합니다.
+* **자동 업로드 금지**: 사용자의 명시적인 승인(`--submit` 또는 `mogako submit`) 없이는 네트워크 요청을 보내지 않습니다.
+* **로컬 파일 우선 저장**: 체크포인트와 전달 상태는 `~/.mogako/outbox/`에 먼저 저장되어 취소나 재시도 가능한 실패 뒤에도 남습니다.
+* **쓰기 전용 인증**: 모각코 앱의 일회용 코드로 발급된 토큰은 `~/.mogako/connection.json`에만 보관되며(Unix `0600` 권한), CLI 출력에 노출되지 않습니다.
+
+---
+
+## ⚡ 빠른 시작 (Quick Start)
+
+### 사전 요구 사항
 
 - Node.js 20 이상
-- checkpoint의 변경 파일 수집을 위한 Git
+- Git
+- 연결할 AI 코딩 도구(Claude Code, Codex 또는 Antigravity)
 
-## 로컬 개발
+### 1단계: CLI 설치
 
-```bash
-npm install
-npm link
-mogako init
-```
-
-링크하지 않고 실행할 수도 있습니다.
+공개 저장소에서 내려받아 일반 사용자용으로 설치합니다:
 
 ```bash
-node src/cli.js init
+git clone https://github.com/mogakoapp/mogako-plugin.git
+cd mogako-plugin
+npm ci
+npm install -g .
+mogako --help
 ```
 
-테스트:
+기여자나 로컬 개발자는 `npm link`를 사용할 수 있지만, 일반 설치에는 `npm install -g .`를 권장합니다.
+
+### 2단계: 모각코 기기 연결
+
+모각코 앱에서 **기록 탭 → 코딩 도구 → 코딩 도구 연결 → 연결 코드 만들기**를 차례로 선택합니다. 연결 코드는 8자리이고 10분 후 만료되며 한 번만 교환할 수 있습니다.
 
 ```bash
-npm test
-npm run check
+mogako connect <8자리_연결_코드> --device-name "My Development PC"
 ```
 
-## 1. 초기화와 연결
+연결 코드는 터미널에만 입력하세요. device token을 LLM, 채팅, 이슈에 붙여 넣지 마세요. 연결을 해제할 때는 `mogako disconnect`로 로컬 파일을 지우고, 서버 권한은 앱의 연결 기기 화면에서 취소합니다.
+
+### 3단계: AI 도구 연동 (Agent Skill 설치)
+사용 중인 AI 코딩 도구에 모각코 연동 스킬을 설치합니다:
 
 ```bash
-mogako init
+# Claude Code 사용자
+mogako install --target claude-code
+
+# Codex 사용자
+mogako install --target codex
+
+# Antigravity 사용자
+mogako install --target antigravity
+
+# Antigravity CLI 사용자
+mogako install --target antigravity-cli
 ```
 
-기본 운영 API 주소는 다음과 같습니다.
+설치 대상과 경로는 다음과 같습니다. 명령은 해당 Agent Skill 파일을 복사하며 자동 hook이나 자동 제출을 추가하지 않습니다.
 
-```text
-https://api.mogako.xyz/api/v1/
-```
+| 대상 | 설치 경로 |
+| :--- | :--- |
+| `codex` | `~/.agents/skills/mogako` |
+| `claude-code` | `~/.claude/skills/mogako` |
+| `antigravity` | `~/.gemini/config/skills/mogako` |
+| `antigravity-cli` | `~/.gemini/antigravity-cli/skills/mogako` |
 
-모각코 앱의 `마이 > 코딩 도구 연결`에서 일회용 코드를 발급한 뒤 입력합니다.
+---
 
-```bash
-mogako connect ABCD2345 --device-name "Windows Development PC"
-```
+## 🛠️ 상세 사용법 (Usage & Workflows)
 
-로컬 백엔드 테스트에서만 API 주소를 덮어쓸 수 있습니다.
+AI 도구 연동의 기본 흐름은 **요약 작성 → 로컬 체크포인트 생성 → 정확한 미리보기 확인 → 최종 승인 후 제출**입니다. `--submit`을 붙여도 대화형 터미널에서는 확인을 한 번 더 묻고, 비대화형 실행에서는 `--yes`를 명시해야 합니다.
 
-```bash
-mogako connect ABCD2345 --api-base-url http://localhost:8080/api/v1/
-```
+### v2 요약 파일 규칙
 
-HTTPS가 기본이며 HTTP는 `localhost`와 `127.0.0.1`에서만 허용합니다. 교환된 기기 토큰은 `~/.mogako/connection.json`에 저장되고 CLI 출력에는 나타나지 않습니다.
-
-로컬 연결 파일을 제거하려면:
-
-```bash
-mogako disconnect
-```
-
-이 명령은 로컬 파일만 제거합니다. 서버 토큰을 즉시 무효화하려면 모각코 앱의 연결 기기 목록에서 해당 기기를 해제해야 합니다.
-
-## 2. 검토된 checkpoint v2 생성
-
-### summary 파일
-
-허용되는 JSON 필드는 정확히 네 개입니다.
+`summary.json`은 아래 네 필드를 모두 포함해야 합니다. `title`이나 다른 필드는 허용되지 않습니다.
 
 ```json
 {
-  "summary": "리프레시 과정에서 논리 세션 ID를 유지하고 관련 테스트를 보완했다.",
-  "completed": ["세션 ID 유지", "통합 테스트 추가"],
-  "nextActions": ["Flutter 인증 연동"],
+  "summary": "인증 세션 리프레시 로직 보완",
+  "completed": ["세션 ID 유지 로직 구현", "인증 테스트 추가"],
+  "nextActions": ["Flutter 앱 연동 테스트"],
   "blockers": []
 }
 ```
 
-다음 입력은 거절됩니다.
+체크포인트는 현재 Git 저장소의 변경 파일을 상대 경로로 수집합니다. 다른 저장소를 지정하려면 `--repo <repository-root>`를 사용하세요. 소스 코드나 diff 자체는 전송하지 않습니다.
 
-- `title`, `changedFiles` 또는 기타 알 수 없는 필드
-- 앞뒤 공백이 있거나 제한을 넘는 문자열
-- `summary` 누락 또는 빈 문자열
-- 배열이 아닌 `completed`, `nextActions`, `blockers`
+### 1. 코딩 활동 체크포인트 기록 (`mogako checkpoint`)
 
-제한값:
+현재 작업 중인 프로젝트의 작업 결과와 변경 파일 목록을 안전하게 체크포인트로 저장합니다.
 
-- `summary`: 최대 1000자
-- `completed`, `nextActions`, `blockers`: 각 최대 20개, 항목당 최대 300자
-- 자동 수집되는 `changedFiles`: 최대 100개, 경로당 최대 240자
-
-### preview와 로컬 outbox만 생성
-
+#### 인라인 요약 작성 (간편 실행)
 ```bash
-mogako checkpoint \
-  --summary-file ./checkpoint-summary.json \
-  --repo . \
-  --target codex
+mogako checkpoint --summary "로그인 토큰 갱신 기능 구현" --submit
 ```
 
-이 명령은 다음을 수행합니다.
-
-1. summary 파일을 allowlist 기준으로 검증하고 민감정보를 마스킹합니다.
-2. `git status --porcelain=v1 -z`에서 안전한 변경 파일 경로만 수집합니다.
-3. 전송할 정확한 checkpoint JSON을 출력합니다.
-4. immutable payload와 `PENDING` delivery sidecar를 로컬 outbox에 저장합니다.
-5. `--submit`이 없으므로 네트워크 요청은 만들지 않습니다.
-
-### preview 후 승인하여 전송
-
-```bash
-mogako checkpoint \
-  --summary-file ./checkpoint-summary.json \
-  --repo . \
-  --target codex \
-  --submit
+#### JSON 파일 기반 요약 작성 (상세 요약)
+`summary.json` 작성 (허용 필드: `summary`, `completed`, `nextActions`, `blockers` 4가지):
+```json
+{
+  "summary": "인증 세션 리프레시 로직 보완 및 통합 테스트 작성",
+  "completed": [
+    "세션 ID 유지 로직 구현",
+    "인증 테스트 3종 추가"
+  ],
+  "nextActions": [
+    "Flutter 앱 연동 테스트"
+  ],
+  "blockers": []
+}
 ```
 
-CLI는 payload, 대상 URL, 제외된 경로 수를 표시한 뒤 최종 확인을 요청합니다. 취소해도 payload와 sidecar는 유지되고 서버 요청은 발생하지 않습니다.
-
-비대화식 환경에서는 명시적인 승인을 뜻하는 `--yes`가 필요합니다.
-
+체크포인트 생성 및 제출:
 ```bash
-mogako checkpoint \
-  --summary-file ./checkpoint-summary.json \
-  --repo . \
-  --target claude-code \
-  --submit \
-  --yes
+mogako checkpoint --summary-file ./summary.json --submit
 ```
 
-`--yes`는 preview와 outbox 생성을 생략하지 않습니다. 표시된 동일 payload를 승인하는 용도로만 사용됩니다.
-
-### target 매핑
-
-| `--target` | 전송되는 `sourceClient` |
-|---|---|
-| `codex` | `CODEX` |
-| `claude-code` | `CLAUDE_CODE` |
-| `antigravity` | `ANTIGRAVITY` |
-| `antigravity-cli` | `ANTIGRAVITY` |
-| `manual` 또는 생략 | `MANUAL_CLI` |
-
-일반 터미널에서 직접 실행하는 예:
+명령은 네트워크 요청 전에 체크포인트 JSON과 outbox 경로를 출력합니다. 미리보기를 확인하고 승인하세요. CI나 비대화형 터미널에서 이미 별도 승인한 경우에만 `--yes`를 추가합니다.
 
 ```bash
-mogako checkpoint --summary-file ./checkpoint-summary.json --repo .
+mogako checkpoint --summary-file ./summary.json --repo . --target codex --submit --yes
 ```
 
-## 3. outbox 재전송
-
-preview에 표시된 payload 경로를 `submit`에 전달합니다.
+`--submit` 없이 실행하면 로컬 outbox에만 저장합니다. 제출이 취소되거나 재시도 가능한 네트워크 오류가 발생해도 payload와 전달 상태 파일은 남습니다. 나중에 직접 제출하려면 다음을 실행하세요.
 
 ```bash
-mogako submit ~/.mogako/outbox/checkpoints/<payload-file>.json
+mogako submit ~/.mogako/outbox/<sourceRecordId>.json
 ```
 
-- 네트워크 오류나 서버 5xx 응답은 재시도 가능한 실패로 sidecar에 기록됩니다.
-- 재전송해도 payload 파일의 bytes는 변경되지 않습니다.
-- 동일 payload가 이미 저장됐다면 서버는 `UNCHANGED`와 기존 checkpoint ID를 반환합니다.
-- 같은 `sourceRecordId`에 다른 payload를 보내면 최종 idempotency 충돌로 처리합니다.
-- 기기 연결이 해제된 경우 401 최종 실패가 기록되지만 immutable payload는 남습니다.
+> 💡 **팁**: `--repo` 옵션을 생략하면 현재 작업 디렉터리(`process.cwd()`)를 Git 저장소로 사용합니다. Git 저장소가 아니면 변경 파일을 수집할 수 없습니다.
 
-## 4. 변경 파일 개인정보 규칙
+---
 
-checkpoint는 파일 내용이나 diff를 읽지 않습니다. Git status의 경로만 `/` 구분자로 정규화한 뒤 다음 경로는 제외합니다.
+### 2. 상태 및 로컬 아웃박스 확인 (`mogako status`)
 
-- 절대 경로, Windows drive 경로, UNC 경로
-- 빈 segment, `.`, `..`, 제어문자가 포함된 경로
-- `.env*`, `*.pem`, `*.key`, credentials, `.ssh`, `secrets` 경로
-
-제외된 실제 경로는 preview에 다시 노출하지 않고 `excludedPathCount`만 표시합니다.
-
-## 5. Agent Skill 설치
+오늘 저장된 작업 세션 수, 집중 시간, 개인정보 모드 및 데이터 저장 위치를 확인합니다.
 
 ```bash
-mogako install --target claude-code
-mogako install --target codex
-mogako install --target antigravity
-mogako install --target antigravity-cli
-```
-
-기존 설치를 교체하려면 `--force`를 추가합니다.
-
-호출 방식:
-
-- Claude Code standalone skill: `/mogako`
-- Codex: `$mogako` 또는 `/skills`에서 선택
-- Antigravity: Mogako skill 선택/호출
-- LLM을 거치지 않는 직접 checkpoint: 터미널에서 `mogako checkpoint ...`
-
-Claude Code 플러그인을 저장소에서 테스트하려면:
-
-```bash
-claude --plugin-dir ./integrations/claude-code
-```
-
-플러그인 방식에서는 `/mogako:mogako`로 표시될 수 있습니다. 짧은 `/mogako` 호출은 `mogako install --target claude-code`가 설치하는 standalone skill을 사용합니다.
-
-각 integration은 summary 파일과 target만 공통 CLI에 전달합니다. preview, 승인, outbox, HTTP 전송과 재시도는 모두 공통 CLI가 담당합니다.
-
-## 6. schema v1 호환 흐름
-
-기존 활동 메타데이터 기록과 일별 마감은 계속 지원합니다.
-
-```bash
-mogako record \
-  --provider codex \
-  --model gpt-5.6-codex \
-  --focus-seconds 3000 \
-  --input-tokens 42120 \
-  --output-tokens 8140
-
+# 텍스트 형태 확인
 mogako status
-mogako wrap
+
+# JSON 형태 확인
+mogako status --json
 ```
 
-v1 metadata-only record를 즉시 제출하려면:
+---
+
+### 3. 대기 중인 아웃박스 제출 (`mogako submit`)
+
+전송하지 않고 저장해둔 로컬 아웃박스 파일(`<sourceRecordId>.json`)을 검토 후 직접 제출합니다.
 
 ```bash
-mogako wrap --submit
+mogako submit ~/.mogako/outbox/4bfcbb06-c71c-4cba-ae56-4d51cccbad33.json
 ```
 
-기존 reviewed summary v1 입력은 `title`을 포함하는 별도 계약입니다.
+---
+
+### 4. 개인정보 설정 변경 (`mogako privacy`)
 
 ```bash
+# 현재 설정 확인
+mogako privacy
+
+# 요약 포함 모드로 변경
 mogako privacy reviewed-summary
-mogako wrap --summary-file ./legacy-summary.json --reviewed
+
+# 메타데이터 전용 모드로 변경
+mogako privacy metadata-only
 ```
 
-v1과 v2 입력 JSON을 섞어 사용하면 안 됩니다. 새 멀티 클라이언트 작업 타임라인에는 `mogako checkpoint`를 사용합니다.
+`privacy`, `record`, `wrap`은 Worklog v1 호환 경로를 위한 명령입니다. v1의 `title`, provider/model, 토큰 카운터와 v2 체크포인트의 네 필드 요약을 섞지 마세요. 새 Agent Skill 사용은 `mogako checkpoint`를 기준으로 합니다.
 
-## 현재 범위
+---
 
-- 공통 Node.js CLI
-- Codex, Claude Code, Antigravity, Antigravity CLI, manual CLI source mapping
-- strict checkpoint v2 JSON validation
-- 개인정보 마스킹과 안전한 changed-file 수집
-- preview와 명시적 승인
-- immutable payload outbox와 atomic delivery sidecar
-- 쓰기 전용 기기 토큰 기반 제출과 재시도
-- schema v1 metadata/reviewed-summary 호환
+### 5. 연결 해제 (`mogako disconnect`)
 
-자세한 개인정보 설계는 [PRIVACY.md](./PRIVACY.md), 구조는 [docs/architecture.md](./docs/architecture.md), v2 계약은 [docs/worklog-checkpoint-v2.md](./docs/worklog-checkpoint-v2.md)를 참고하세요.
+```bash
+mogako disconnect
+```
+> ⚠️ `disconnect` 명령은 로컬 기기 인증 파일만 제거합니다. 서버 권한을 즉시 취소하려면 모각코 앱의 연결 기기 관리 화면에서 해당 기기를 해제하세요.
+
+---
+
+## 🤖 AI 코딩 도구별 호출 가이드
+
+각 AI 도구 환경에서 다음과 같이 모각코 연동 명령을 호출할 수 있습니다.
+
+* **Claude Code**: 슬래시 커맨드 `/mogako` 실행 (또는 플러그인 모드 `/mogako:mogako`)
+* **Codex**: `$mogako` 호출 또는 `/skills` 메뉴에서 `mogako` 선택
+* **Antigravity**: Antigravity IDE Skill 목록에서 `mogako` 선택
+* **일반 터미널 (Shell)**: `mogako checkpoint --summary "..." --submit` 실행
+
+### LLM으로 설치하기
+
+터미널 명령을 실행할 수 있는 LLM 호스트라면 아래 프롬프트를 그대로 입력해 설치를 맡길 수 있습니다. 일반 채팅 모델처럼 터미널 권한이 없는 환경은 명령을 대신 실행할 수 없으므로, 출력된 명령을 사용자가 직접 실행해야 합니다.
+
+```text
+터미널에서만 다음 Mogako Plugin 설치를 진행해줘.
+1. Node.js 20+와 Git이 있는지 확인하고 없으면 먼저 중단해줘.
+2. 공식 저장소 https://github.com/mogakoapp/mogako-plugin 을 clone하고 npm ci를 실행해줘.
+3. npm install -g . 를 실행한 뒤 mogako --help가 동작하는지 확인해줘.
+4. 내가 선택한 호스트에 맞춰 mogako install --target codex|claude-code|antigravity|antigravity-cli 중 하나만 실행해줘.
+5. 연결 코드 입력, device token 출력, 체크포인트 제출은 실행하지 말고 여기서 멈춰줘.
+각 단계의 명령과 결과를 보여줘.
+```
+
+### 매일 사용할 LLM 프롬프트
+
+```text
+오늘 작업의 Mogako 체크포인트를 준비해줘.
+1. 소스 코드, 프롬프트, AI 응답, diff, 절대 경로, Git remote, token은 요약에 넣지 마.
+2. summary, completed, nextActions, blockers 네 필드만 사용해서 먼저 요약을 보여줘.
+3. 내가 승인하기 전에는 파일 생성, --submit, 네트워크 요청을 하지 마.
+4. 승인하면 summary.json을 만들고 mogako checkpoint --summary-file summary.json --repo <repository-root> --target <target> --submit 을 실행해줘.
+5. 미리보기와 최종 확인을 거친 뒤에만 제출하고, payload 경로와 결과만 알려줘. token은 출력하지 마.
+```
+
+LLM이 연결 코드를 받거나 제출을 자동 승인하도록 프롬프트하지 마세요. 연결 코드 생성·입력, 요약 승인, 최종 제출은 사용자가 직접 결정해야 합니다.
+
+---
+
+## 📖 CLI 전체 명령어 레퍼런스 (CLI Reference)
+
+```text
+Mogako CLI v0.1
+
+Usage:
+  mogako init [--mode metadata-only|reviewed-summary] [--force]
+  mogako privacy [metadata-only|reviewed-summary]
+  mogako connect <code> [--device-name <name>] [--api-base-url <url>]
+  mogako disconnect
+  mogako record --provider <name> [--model <name>] [--focus-seconds <n>]
+                [--input-tokens <n>] [--output-tokens <n>]
+                [--cached-input-tokens <n>]
+  mogako status [--date YYYY-MM-DD] [--json]
+  mogako wrap [--date YYYY-MM-DD] [--summary-file <path> --reviewed]
+  mogako checkpoint [--summary-file <path> | --summary "<text>"] [--repo <root>]
+                    [--target codex|claude-code|antigravity|antigravity-cli|manual]
+                    [--submit] [--yes]
+  mogako submit <record.json>
+  mogako install --target codex|claude-code|antigravity|antigravity-cli [--force]
+```
+
+---
+
+## ❓ 자주 묻는 질문 (FAQ & Troubleshooting)
+
+<details>
+<summary>Q. summary.json 파일 작성 시 title 필드를 넣어도 되나요?</summary>
+
+**A.** 안 됩니다. Schema v2 사양에서는 `title` 필드를 금지하며, `summary`, `completed`, `nextActions`, `blockers` 4가지 필드만 허용합니다. `title`을 넣을 경우 유효성 검사 오류가 발생합니다.
+</details>
+
+<details>
+<summary>Q. Git 저장소가 아닌 곳에서도 변경 파일 목록 수집이 가능한가요?</summary>
+
+**A.** 아니요. changedFiles 목록은 `git status`를 기반으로 수집하므로, Git 저장소가 아닌 디렉터리에서는 변경 파일 목록이 빈 배열(`[]`)로 기록됩니다.
+</details>
+
+<details>
+<summary>Q. 로컬 저장 데이터를 완전히 삭제하려면 어떻게 해야 하나요?</summary>
+
+**A.** 홈 디렉터리의 `~/.mogako` 폴더를 삭제하면 모든 설정, 활동 메타데이터, 인증 정보, outbox 기록이 지워집니다.
+
+* **macOS / Linux**: `rm -rf ~/.mogako`
+* **Windows (PowerShell)**: `Remove-Item -Recurse -Force "$HOME\.mogako"`
+</details>
+
+---
+
+## 📄 라이선스 (License)
+
+[MIT License](./LICENSE)

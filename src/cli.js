@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import fs from "node:fs";
 import path from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
@@ -33,7 +34,7 @@ Usage:
   mogako status [--date YYYY-MM-DD] [--json]
   mogako wrap [--date YYYY-MM-DD] [--summary-file <path> --reviewed]
               [--dry-run] [--submit] [--yes]
-  mogako checkpoint --summary-file <path> --repo <root>
+  mogako checkpoint [--summary-file <path> | --summary "<text>"] [--repo <root>]
                     [--target codex|claude-code|antigravity|antigravity-cli|manual]
                     [--submit] [--yes]
   mogako submit <record.json>
@@ -241,18 +242,20 @@ export async function runCli(
 
     case "checkpoint": {
       const summaryFile = stringFlag(flags, "summary-file");
-      const repositoryRoot = stringFlag(flags, "repo");
-      if (!summaryFile) {
-        throw new Error("checkpoint requires --summary-file.");
+      const inlineSummary = stringFlag(flags, "summary");
+      if (!summaryFile && !inlineSummary) {
+        throw new Error("checkpoint requires --summary-file or inline --summary.");
       }
-      if (!repositoryRoot) {
-        throw new Error("checkpoint requires --repo.");
-      }
+      const repositoryRoot = stringFlag(flags, "repo") || process.cwd();
       const changedFilesResult = await collectChangedFiles(
         path.resolve(repositoryRoot)
       );
+      const summaryInput = inlineSummary
+        ? { summary: inlineSummary, completed: [], nextActions: [], blockers: [] }
+        : undefined;
       const checkpoint = await buildCheckpoint({
         summaryFile,
+        summaryInput,
         repositoryRoot,
         target: stringFlag(flags, "target"),
         reviewed: true,
@@ -370,8 +373,21 @@ export function createDefaultIo() {
   };
 }
 
+export function isSameCliEntrypoint(
+  invokedPath,
+  currentPath,
+  resolvePath = fs.realpathSync.native
+) {
+  if (!invokedPath || !currentPath) return false;
+  try {
+    return resolvePath(path.resolve(invokedPath)) === resolvePath(path.resolve(currentPath));
+  } catch {
+    return false;
+  }
+}
+
 const currentFile = fileURLToPath(import.meta.url);
-if (process.argv[1] && path.resolve(process.argv[1]) === currentFile) {
+if (isSameCliEntrypoint(process.argv[1], currentFile)) {
   const io = createDefaultIo();
   runCli(process.argv.slice(2), { io }).catch((error) => {
     io.error(`mogako: ${error.message}`);

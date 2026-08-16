@@ -147,3 +147,23 @@ test("explicit approval submits the exact previewed checkpoint", async () => {
   assert.equal(delivery.status, "DELIVERED");
   assert.equal(delivery.attemptCount, 1);
 });
+
+test("checkpoint supports inline --summary flag", async () => {
+  const { env, repository } = await fixture();
+  const io = interactiveIo(true);
+
+  await runCli([
+    "checkpoint",
+    "--summary", "Inline summary test",
+    "--repo", repository,
+    "--target", "antigravity"
+  ], {
+    env,
+    io
+  });
+
+  const preview = previewFrom(io);
+  assert.equal(preview.sourceClient, "ANTIGRAVITY");
+  assert.equal(preview.checkpoint.summary, "Inline summary test");
+  assert.deepEqual(preview.checkpoint.completed, []);
+});

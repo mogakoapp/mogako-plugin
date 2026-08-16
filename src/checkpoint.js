@@ -9,6 +9,7 @@ import { sourceClientForTarget } from "./source-client.js";
 
 export async function buildCheckpoint({
   summaryFile,
+  summaryInput: rawSummaryInput,
   repositoryRoot,
   target,
   reviewed = false,
@@ -18,19 +19,17 @@ export async function buildCheckpoint({
   if (!reviewed) {
     throw new Error("Checkpoint creation requires the --reviewed flag.");
   }
-  if (typeof summaryFile !== "string" || summaryFile.trim() === "") {
-    throw new Error("Checkpoint creation requires --summary-file.");
-  }
-  if (typeof repositoryRoot !== "string" || repositoryRoot.trim() === "") {
-    throw new Error("Checkpoint creation requires a repository root.");
-  }
-  if (!(now instanceof Date) || Number.isNaN(now.getTime())) {
-    throw new Error("Checkpoint creation requires a valid time.");
+  let summaryInput;
+  if (rawSummaryInput && typeof rawSummaryInput === "object") {
+    summaryInput = sanitizeCheckpointSummary(rawSummaryInput);
+  } else if (typeof summaryFile === "string" && summaryFile.trim() !== "") {
+    summaryInput = sanitizeCheckpointSummary(
+      await readJson(path.resolve(summaryFile))
+    );
+  } else {
+    throw new Error("Checkpoint creation requires --summary-file or inline --summary.");
   }
 
-  const summaryInput = sanitizeCheckpointSummary(
-    await readJson(path.resolve(summaryFile))
-  );
   const files = changedFilesResult ||
     await collectChangedFiles(path.resolve(repositoryRoot));
   if (!files || !Array.isArray(files.included)) {

@@ -1,6 +1,6 @@
 ---
 name: mogako
-description: Create or inspect a Mogako work checkpoint. Use only when the user explicitly asks to run Mogako, save the current coding progress, or check Mogako privacy settings.
+description: Create or inspect a Mogako work checkpoint. Use when the user explicitly asks to run Mogako, '모각코', '모각코 저장', '모각코 기록', save current coding progress, or check Mogako privacy settings.
 ---
 
 # Mogako
