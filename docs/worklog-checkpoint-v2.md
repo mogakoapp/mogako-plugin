@@ -1,318 +1,170 @@
-# Worklog Checkpoint Schema v2 Contract
+# Worklog Checkpoint Schema v2
 
-작성일: 2026-08-03
-상태: Mogako backend와 공유하는 구현 기준본
-공개 plugin 저장소: `mogakoapp/mogako-plugin`
-백엔드 계약은 private Mogako 서비스가 소비하며, 이 저장소에는 앱·백엔드 소스가 포함되지 않는다.
+> Mogako Plugin이 사용자 검토를 거친 작업 요약과 안전한 변경 파일 경로를 로컬 checkpoint로 만드는 공개 동작 계약입니다. 소스 코드, diff, 프롬프트 또는 대화 전문을 기록하거나 전송하지 않습니다.
 
-## 1. 목적
+## What it records
 
-Mogako Plugin은 Codex, Claude Code, Gemini 기반 Antigravity와 일반 터미널 CLI에서 사용자가 명시적으로 검토한 현재 작업 결과를 하나의 공통 checkpoint payload로 만든다.
+v2 checkpoint는 한 번의 작업 결과를 요약한 immutable payload입니다. 같은 날짜에도 여러 checkpoint를 만들 수 있으며, 각 payload는 생성 후 수정하지 않습니다.
 
-schema v2는 같은 날짜에 여러 번 제출할 수 있으며, Mogako backend는 각 payload를 교체하지 않고 immutable checkpoint로 누적한다.
+기본 흐름은 다음과 같습니다.
 
-이 문서는 plugin이 생성하는 JSON과 backend가 수신하는 JSON의 공통 계약이다. 한쪽만 독자적으로 필드, enum 또는 제한을 변경하면 안 된다.
+`작업 요약 작성 → 로컬 checkpoint 생성 → 정확한 JSON preview 확인 → 사용자 승인 → 제출`
 
-## 2. 지원 client
+## Supported clients
 
-```text
-CODEX
-CLAUDE_CODE
-ANTIGRAVITY
-MANUAL_CLI
+| Integration target | `sourceClient` |
+| --- | --- |
+| `codex` | `CODEX` |
+| `claude-code` | `CLAUDE_CODE` |
+| `antigravity` 또는 `antigravity-cli` | `ANTIGRAVITY` |
+| `manual` 또는 target 생략 | `MANUAL_CLI` |
+
+`sourceClient`는 checkpoint 출처를 표시하는 provenance 값이며, 권한·과금·신뢰도 판단을 위한 값이 아닙니다. integration은 payload를 직접 만들지 않고 공통 CLI에 target만 전달합니다.
+
+## Summary-file input
+
+`mogako checkpoint --summary-file <json>`은 다음 네 필드만 받습니다.
+
+```json
+{
+  "summary": "검토한 작업 결과",
+  "completed": ["완료한 항목"],
+  "nextActions": ["다음 작업"],
+  "blockers": []
+}
 ```
 
-integration mapping:
+- 네 필드는 모두 필요합니다.
+- `title`와 알 수 없는 필드는 거절합니다.
+- `summary`는 문자열이고 나머지는 문자열 배열입니다.
+- 기존 secret redaction을 적용한 뒤 trim과 길이 제한을 검사합니다.
+- v2는 값을 조용히 잘라내지 않습니다. 검증을 통과한 동일한 결과가 preview와 payload에 사용됩니다.
 
-```text
-codex             -> CODEX
-claude-code       -> CLAUDE_CODE
-antigravity       -> ANTIGRAVITY
-antigravity-cli   -> ANTIGRAVITY
-manual            -> MANUAL_CLI
-target omitted    -> MANUAL_CLI
-```
-
-`sourceClient`는 앱에서 checkpoint 출처를 표시하기 위한 값이다. 인증, 권한, 과금 또는 신뢰도 판단에 사용하지 않는다.
-
-## 3. 공통 wire payload
+## Wire payload
 
 ```json
 {
   "schemaVersion": 2,
   "sourceRecordId": "4bfcbb06-c71c-4cba-ae56-4d51cccbad33",
   "sourceClient": "CODEX",
-  "generatedAt": "2026-08-03T06:20:00Z",
+  "generatedAt": "2026-08-16T06:20:00Z",
   "timeZoneId": "Asia/Seoul",
-  "localDate": "2026-08-03",
-  "summary": "체크포인트 누적 구조를 구현했다.",
-  "completed": ["백엔드 스키마 작성"],
-  "changedFiles": ["backend/src/main/resources/db/migration/V18__append_worklog_checkpoints.sql"],
-  "nextActions": ["v2 import API 구현"],
+  "localDate": "2026-08-16",
+  "summary": "체크포인트 입력과 preview 흐름을 정리했다.",
+  "completed": ["v2 입력 검증 추가"],
+  "changedFiles": ["src/checkpoint.js", "docs/example.md"],
+  "nextActions": ["통합 테스트 실행"],
   "blockers": []
 }
 ```
 
-최상위 필드는 exact allowlist다. `additionalProperties`는 허용하지 않으며 알 수 없는 필드는 plugin validator와 backend validation에서 모두 거절한다.
+최상위 필드는 다음 11개이며, 알 수 없는 필드는 허용하지 않습니다.
 
-| Field | Required contract |
+| Field | Contract |
 | --- | --- |
-| schemaVersion | integer `2` |
-| sourceRecordId | UUID |
-| sourceClient | `CODEX`, `CLAUDE_CODE`, `ANTIGRAVITY`, `MANUAL_CLI` |
-| generatedAt | UTC RFC 3339 instant, 서버보다 최대 5분 미래만 허용 |
-| timeZoneId | valid IANA zone, 1~64자 |
-| localDate | `generatedAt`과 `timeZoneId`로 계산한 날짜 |
-| summary | trim 후 공백이 아닌 문자열, 1~1000자 |
-| completed | 필수 배열, 최대 20개, 항목당 1~300자 |
-| changedFiles | 필수 배열, 최대 100개, 저장소 상대 경로, 항목당 1~240자 |
-| nextActions | 필수 배열, 최대 20개, 항목당 1~300자 |
-| blockers | 필수 배열, 최대 20개, 항목당 1~300자, 빈 배열 허용 |
+| `schemaVersion` | integer `2` |
+| `sourceRecordId` | UUID |
+| `sourceClient` | `CODEX`, `CLAUDE_CODE`, `ANTIGRAVITY`, `MANUAL_CLI` |
+| `generatedAt` | UTC RFC 3339 instant |
+| `timeZoneId` | IANA timezone, 1~64자 |
+| `localDate` | `generatedAt`와 timezone으로 계산한 `YYYY-MM-DD` |
+| `summary` | trim 후 1~1000자 문자열 |
+| `completed`, `nextActions`, `blockers` | 각 최대 20개, 항목당 1~300자 문자열 |
+| `changedFiles` | 최대 100개, 저장소 상대 경로, 항목당 1~240자 |
 
-CLI와 서버는 길이 초과 값을 조용히 자르지 않고, trim되지 않은 wire 값을 수정해 저장하지 않는다. 정규화되지 않은 값은 preview 이전 또는 API validation에서 거절한다.
+`sourceRecordId`는 outbox 생성 시 한 번 만들고, 재시도할 때도 유지합니다. `localDate`는 임의로 입력하지 않고 instant와 timezone에서 계산합니다.
 
-## 4. v2 summary-file 입력 계약
+## Privacy boundary
 
-`mogako checkpoint --summary-file <json>`은 다음 네 필드만 받는다.
+v2 checkpoint에는 다음 정보가 포함되지 않습니다.
 
-```json
-{
-  "summary": "필수 작업 요약",
-  "completed": [],
-  "nextActions": [],
-  "blockers": []
-}
-```
-
-규칙:
-
-- 네 필드는 모두 필수다.
-- `title`과 unknown field는 거절한다.
-- `summary`는 문자열이고 나머지 세 필드는 문자열 배열이다.
-- 기존 secret redaction은 유지한다.
-- redaction 후 trim과 v2 길이 제한을 검사한다.
-- v1 sanitizer의 truncation 동작은 v2에 적용하지 않는다.
-- 최종 redaction·validation 결과가 preview와 immutable wire payload에 동일하게 사용된다.
-
-## 5. 필드 의미
-
-### `sourceRecordId`
-
-- outbox 생성 시 한 번만 만든다.
-- 네트워크 실패, 401 해결 후 재시도, 응답 손실 시에도 변경하지 않는다.
-- backend idempotency key의 일부다.
-
-### `sourceClient`
-
-- integration이 공통 CLI에 target을 전달하면 CLI가 결정한다.
-- `--target manual`과 target 생략은 모두 `MANUAL_CLI`다.
-- integration이 payload JSON을 직접 작성하지 않는다.
-
-### `generatedAt`, `timeZoneId`, `localDate`
-
-- `generatedAt`은 사용자가 검토한 뒤 outbox를 생성한 UTC 시각이다.
-- `timeZoneId`는 OS에서 얻은 IANA timezone ID다.
-- `localDate`는 해당 instant를 `timeZoneId`로 변환한 `YYYY-MM-DD`다.
-- 신뢰할 수 있는 IANA zone을 얻지 못하면 임의 추정하지 않고 생성을 중단한다.
-
-### 작업 내용 필드
-
-- `summary`: 사용자가 검토한 현재 작업 결과의 간결한 요약
-- `completed`: 완료한 항목
-- `changedFiles`: 저장소 기준 상대 경로
-- `nextActions`: 다음에 진행할 항목
-- `blockers`: 막힌 항목, 없으면 `[]`
-
-전체 대화 요약, 세션 전문, 코드 본문 또는 diff를 포함하지 않는다.
-
-## 6. 전송하지 않는 정보
-
-schema v2는 다음 정보를 포함하지 않는다.
-
-- provider
-- model 이름과 버전
-- 입력·출력 토큰 수
-- 프롬프트
-- AI 응답 전문
-- 전체 대화 또는 세션 전문
-- 코드 본문
-- diff 또는 patch
-- Git remote URL
-- 절대 경로와 사용자 홈 경로
+- 소스 코드 본문, diff, patch
+- 프롬프트, AI 응답 전문, 전체 대화 또는 세션 전문
+- Git remote URL, 절대 경로, 사용자 홈 경로
 - API key, token, credential 원문
+- provider, model 이름과 버전, 입력·출력 token 수
 
-기존 schema v1의 metadata와 usage 정보는 조회 호환을 위해 유지할 수 있지만, v2 checkpoint builder가 이를 복사하지 않는다.
+요약은 사용자가 직접 검토해야 하며, 민감한 내용을 요약에 넣지 않아야 합니다. 기존 v1 metadata와 usage 필드는 v1 호환 경로에서만 다뤄지며 v2 payload로 복사하지 않습니다.
 
-## 7. 변경 파일 수집
+## Changed-file paths
 
-공통 CLI만 변경 파일을 수집한다.
-
-허용된 Git 명령:
+공통 CLI는 파일 본문을 읽지 않고 다음 Git 상태 명령의 경로 필드만 사용합니다.
 
 ```text
 git status --porcelain=v1 -z --untracked-files=all
 ```
 
-금지:
+경로 처리 규칙:
+
+- `\`를 `/`로 정규화합니다.
+- 절대 경로, Windows drive 경로, UNC 경로, 빈 segment, `.`, `..`, 제어문자를 거절합니다.
+- 경로당 최대 240자, 전체 최대 100개입니다.
+- `.env*`, `*.pem`, `*.key`, `credentials*`, `.ssh/`, `secrets/` 등 민감한 경로를 제외합니다.
+- rename/copy 상태에서는 NUL로 전달된 destination 경로를 사용합니다.
+
+변경 파일 수집 과정에서 diff, 파일 내용, remote 정보는 읽지 않습니다. 제외된 민감 경로의 원문도 preview에 불필요하게 다시 출력하지 않습니다.
+
+## Preview, approval, and local outbox
+
+checkpoint 생성과 제출은 분리되어 있습니다.
 
 ```text
-git diff
-git show
-파일 본문 읽기
-remote URL 조회
-```
-
-검증 규칙:
-
-- `\`를 `/`로 정규화
-- 절대 경로 거절
-- Windows drive와 UNC 경로 거절
-- 빈 segment, `.`, `..`, 제어문자 거절
-- 경로당 최대 240자
-- 최대 100개
-- `.env*`, `*.pem`, `*.key`, `credentials*`, `.ssh/`, `secrets/` 등 민감 패턴 제외
-- rename/copy는 NUL 필드 두 개를 모두 소비하고 destination만 후보로 사용
-
-민감 경로는 payload에서 제외한다. 미리보기에서는 제외된 항목 수를 알려주되 민감 경로 원문을 필요 이상으로 다시 출력하지 않는다. 서버에 민감하거나 잘못된 경로가 도달하면 전체 요청을 거절한다.
-
-## 8. Integration 책임
-
-Claude Code, Codex, Antigravity integration은 다음만 담당한다.
-
-- 현재 작업 결과를 summary-file allowlist 형태로 준비
-- 공통 CLI 호출
-- 자신의 target identifier 전달
-- CLI가 만든 정확한 JSON 미리보기와 승인 흐름 연결
-
-integration은 다음을 담당하지 않는다.
-
-- JSON Schema 구현
-- 직접 UUID 또는 날짜 생성
-- changed-file 수집
-- HTTP 인증과 submit
-- outbox 상태 전환
-- backend endpoint 직접 호출
-
-일반 shell은 integration 없이 동일한 공통 CLI를 사용하고 `MANUAL_CLI`로 기록한다.
-
-## 9. 승인, immutable outbox, delivery sidecar
-
-checkpoint 생성과 submit은 분리한다.
-
-```text
-현재 작업 결과 구성
-        ↓
-공통 CLI redaction과 validation
-        ↓
+summary
+  ↓
+redaction 및 validation
+  ↓
 immutable payload와 PENDING sidecar 생성
-        ↓
-정확한 JSON 미리보기
-        ↓
+  ↓
+정확한 JSON preview
+  ↓
 사용자 승인
-        ↓
+  ↓
 submit
 ```
 
-파일:
+outbox 파일은 다음 위치에 저장됩니다.
 
-```text
-~/.mogako/outbox/<sourceRecordId>.json
-~/.mogako/outbox/<sourceRecordId>.delivery.json
+`~/.mogako/outbox/<sourceRecordId>.json` — checkpoint payload
+`~/.mogako/outbox/<sourceRecordId>.delivery.json` — 제출 상태 sidecar
+
+`--submit`을 사용해도 대화형 터미널에서는 정확한 preview를 먼저 보여주고 확인을 요청합니다. 승인 전에는 네트워크 요청을 하지 않습니다. 자동·주기적·세션 종료 시 제출도 하지 않습니다.
+
+허용되는 sidecar 상태는 `PENDING`, `SUBMITTING`, `DELIVERED`, `FAILED_RETRYABLE`, `FAILED_FINAL`입니다. 취소나 재시도 가능한 실패 뒤에도 payload를 삭제하지 않으며, 재시도 시 같은 payload bytes와 `sourceRecordId`를 유지합니다. sidecar에는 payload, token 또는 원문 오류 응답을 저장하지 않습니다.
+
+## CLI examples
+
+직접 요약을 입력하는 방법:
+
+```sh
+mogako checkpoint --summary "로그인 토큰 갱신 기능 구현" --submit
 ```
 
-첫 파일은 wire payload만 가지며 생성 후 수정하지 않는다. delivery 상태는 sidecar에만 저장한다.
+summary file과 변경 파일 경로를 함께 사용하는 방법:
 
-```json
-{
-  "status": "PENDING",
-  "attemptCount": 0,
-  "lastErrorCode": null,
-  "updatedAt": "2026-08-03T06:20:00Z"
-}
+```sh
+mogako checkpoint --summary-file ./summary.json --repo . --target codex --submit
 ```
 
-허용 상태:
+`--submit` 없이 실행하면 로컬 outbox에만 저장합니다. 별도로 승인된 비대화형 실행에서만 `--yes`를 추가합니다.
 
-```text
-PENDING
-SUBMITTING
-DELIVERED
-FAILED_RETRYABLE
-FAILED_FINAL
+저장된 payload 재제출:
+
+```sh
+mogako submit ~/.mogako/outbox/<sourceRecordId>.json
 ```
 
-원칙:
+## Schema files and fixtures
 
-- 승인 전 네트워크 요청 금지
-- 자동 전송, 주기적 전송, 세션 종료 hook 전송 금지
-- 전송 실패 시 payload 삭제 금지
-- 재시도 시 같은 payload bytes와 `sourceRecordId` 유지
-- sidecar에 payload, device token 또는 API error body 저장 금지
-- backend `UNCHANGED` 응답은 성공으로 처리
+검증에 사용하는 공개 파일:
 
-## 10. Backend endpoint
+- [`schemas/worklog-v2.schema.json`](../schemas/worklog-v2.schema.json)
+- [`schemas/worklog-v1.schema.json`](../schemas/worklog-v1.schema.json)
+- [v2 fixtures](../test/fixtures/)
 
-```text
-POST /api/v1/worklog-imports/checkpoints
-Authorization: Worklog <device-token>
-```
+fixture와 테스트는 supported client mapping, 정상 payload, 알 수 없는 client, 민감한 경로, 날짜 불일치 같은 경계를 확인합니다.
 
-성공 결과:
+## v1 compatibility
 
-```text
-CREATED
-UNCHANGED
-```
+`privacy`, `record`, `wrap` 명령은 Worklog v1 호환을 위해 유지됩니다. v1에는 `title`, provider/model, token counter 같은 필드가 있을 수 있지만 v2 summary-file에는 섞지 않습니다.
 
-schema v2에서는 기존 일별 replace 결과인 `REPLACED`와 `WORKLOG_STALE_IMPORT`를 사용하지 않는다.
-
-## 11. Legacy 호환
-
-- schema v1 `record`, `wrap`, metadata-only 파일은 즉시 삭제하지 않는다.
-- v1과 v2는 endpoint와 payload를 명시적으로 구분한다.
-- v1 파일에서 source client를 provider/model 값으로 추정하지 않는다.
-- backend legacy checkpoint는 `sourceClient=null`로 유지한다.
-- `LEGACY_METADATA`는 checkpoint count와 timeline에 포함하되 대표 summary와 summary/list UI 후보에서는 제외한다.
-- v1 종료는 backend checkpoint-only 전환과 사용 현황 검증 후 별도 공지한다.
-
-## 12. Contract verification
-
-plugin JSON Schema, fixture와 backend OpenAPI·fixture는 다음이 정확히 일치해야 한다.
-
-```text
-11 required fields
-4 sourceClient enum values
-summary 1000
-completed/nextActions/blockers 20 x 300
-changedFiles 100 x 240
-timeZoneId 64
-future skew 5 minutes
-additionalProperties false
-Authorization: Worklog <device-token>
-```
-
-필수 fixture:
-
-```text
-valid-codex.json
-valid-claude-code.json
-valid-antigravity.json
-valid-manual-cli.json
-invalid-unknown-client.json
-invalid-sensitive-path.json
-invalid-local-date.json
-```
-
-네 valid fixture는 `sourceRecordId`와 `sourceClient`를 제외하고 동일한 구조와 제한 예시를 사용한다.
-
-## 13. 변경 절차
-
-공통 계약 변경이 필요하면 다음 순서를 따른다.
-
-1. private Mogako backend 설계 문서 수정
-2. 이 문서와 JSON Schema 수정
-3. backend DTO/OpenAPI contract test 수정
-4. plugin fixture와 validator test 수정
-5. 두 저장소 PR에서 동일한 enum, 필드, 제한, 인증 헤더 확인
-
-한 저장소에서만 필드나 enum을 먼저 변경하지 않는다.
+새 Agent Skill 연동은 `mogako checkpoint`를 사용합니다. 기존 v1 기록이 필요한 경우에만 v1 명령을 사용하세요.
