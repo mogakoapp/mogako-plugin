@@ -2,7 +2,8 @@
 
 작성일: 2026-08-03
 상태: Mogako backend와 공유하는 구현 기준본
-관련 저장소: `rbxo0128/mogako`, `rbxo0128/mogako-plugin`
+공개 plugin 저장소: `mogakoapp/mogako-plugin`
+백엔드 계약은 private Mogako 서비스가 소비하며, 이 저장소에는 앱·백엔드 소스가 포함되지 않는다.
 
 ## 1. 목적
 
@@ -308,7 +309,7 @@ invalid-local-date.json
 
 공통 계약 변경이 필요하면 다음 순서를 따른다.
 
-1. `rbxo0128/mogako` 설계 문서 수정
+1. private Mogako backend 설계 문서 수정
 2. 이 문서와 JSON Schema 수정
 3. backend DTO/OpenAPI contract test 수정
 4. plugin fixture와 validator test 수정
